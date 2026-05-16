@@ -31,10 +31,10 @@ public class GeneradorParser {
             // 3. Ejecutar la herramienta CUP directamente desde Java
             java_cup.Main.main(opcionesCUP);
             
-            System.out.println("✔ Parser.java y sym.java generados con éxito en: " + rutaBase);
+            System.out.println("Parser.java y sym.java generados con éxito en: " + rutaBase);
             
         } catch (Exception e) {
-            System.err.println("✖ Hubo un error al compilar el archivo .cup");
+            System.err.println("Hubo un error al compilar el archivo .cup");
             e.printStackTrace();
         }
     }

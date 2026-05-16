@@ -78,6 +78,33 @@ StringLiteral = \"[^\"]*\"
     "("            { return symbol(sym.PARENTESIS_A); }
     ")"            { return symbol(sym.PARENTESIS_C); }
 
+    /* Nuevos Tipos de Datos */
+    "byte"         { return symbol(sym.BYTE); }
+    "short"        { return symbol(sym.SHORT); }
+    "long"         { return symbol(sym.LONG); }
+    "float"        { return symbol(sym.FLOAT); }
+    "double"       { return symbol(sym.DOUBLE); }
+    "char"         { return symbol(sym.CHAR); }
+    "String"       { return symbol(sym.STRING_TYPE); }
+
+    /* Nuevas Estructuras */
+    "do"           { return symbol(sym.DO); }
+    "for"          { return symbol(sym.FOR); }
+
+    /* Nuevos Operadores Lógicos y Relacionales */
+    "&&"           { return symbol(sym.AND); }
+    "||"           { return symbol(sym.OR); }
+    "!"            { return symbol(sym.NOT); }
+    ">="           { return symbol(sym.MAYOR_IGUAL); }
+    "<="           { return symbol(sym.MENOR_IGUAL); }
+    "!="           { return symbol(sym.DIFERENTE); }
+    "++"           { return symbol(sym.INCREMENTO); }
+    "--"           { return symbol(sym.DECREMENTO); }
+    ":"            { return symbol(sym.DOS_PUNTOS); }
+
+    /* Nuevo Literal para Char */
+    \'[^\']\'      { return symbol(sym.LITERAL_CHAR, yytext()); }
+    
     /* Literales e Identificadores */
     {Entero}         { return symbol(sym.LITERAL_ENTERO, new Integer(yytext())); }
     {Flotante}       { return symbol(sym.LITERAL_FLOTANTE, new Double(yytext())); }

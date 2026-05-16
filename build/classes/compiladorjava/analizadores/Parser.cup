@@ -4,139 +4,312 @@
 package compiladorjava.analizadores;
 
 import java_cup.runtime.*;
+import java.util.Stack;
+import java.util.Map;
+import java.util.HashMap;
 
 parser code {:
     public void syntax_error(Symbol s) {
         System.err.println("Error Sintáctico en la Línea " + (s.left) + 
-                           " Columna " + s.right + ". No se esperaba este componente: " + s.value);
+                           " Columna " + s.right + ". No se esperaba: " + s.value);
     }
 
     public void unrecovered_syntax_error(Symbol s) throws java.lang.Exception {
-        System.err.println("Error Sintáctico Irrecuperable en la Línea " + 
+        System.err.println("Error Irrecuperable en la Línea " + 
                            (s.left)+ " Columna "+s.right + ". Componente " + s.value + " no reconocido.");
+    }
+:}
+
+action code {:
+    // ==========================================================
+    //  CEREBRO SEMÁNTICO (Tabla de Símbolos y Tipos Integrada)
+    // ==========================================================
+    
+    // Control de Ámbitos (Scopes)
+    Stack<Map<String, String>> ambitos = new Stack<>();
+
+    // Inicializamos el ámbito global al instanciar
+    { ambitos.push(new HashMap<>()); }
+
+    public void entrarAmbito() { ambitos.push(new HashMap<>()); }
+    public void salirAmbito()  { if(ambitos.size() > 1) ambitos.pop(); }
+
+    // Declaración de variables
+    public void declarar(String id, String tipo, int linea) {
+        if (tipo.equals("VOID")) {
+            throw new RuntimeException("Error Semántico [Línea " + linea + "]: No se pueden declarar variables de tipo 'void'.");
+        }
+        if (ambitos.peek().containsKey(id)) {
+            throw new RuntimeException("Error Semántico [Línea " + linea + "]: La variable '" + id + "' ya está declarada en este ámbito.");
+        }
+        ambitos.peek().put(id, tipo.toUpperCase());
+    }
+
+    // Búsqueda de variables
+    public String obtenerTipo(String id, int linea) {
+        for(int i = ambitos.size() - 1; i >= 0; i--) {
+            if(ambitos.get(i).containsKey(id)) {
+                return ambitos.get(i).get(id);
+            }
+        }
+        throw new RuntimeException("Error Semántico [Línea " + linea + "]: Variable '" + id + "' no ha sido declarada.");
+    }
+
+    // Reglas de Casteo Implícito (Widening)
+    public boolean esCompatible(String destino, String origen) {
+        destino = destino.toUpperCase();
+        origen = origen.toUpperCase();
+        
+        if (destino.equals(origen)) return true;
+        if (destino.equals("STRING")) return true; // Todo se puede concatenar a String
+        
+        // Jerarquía numérica: byte -> short -> int -> long -> float -> double
+        if (destino.equals("DOUBLE")) return origen.equals("FLOAT") || origen.equals("LONG") || origen.equals("INT") || origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
+        if (destino.equals("FLOAT"))  return origen.equals("LONG") || origen.equals("INT") || origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
+        if (destino.equals("LONG"))   return origen.equals("INT") || origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
+        if (destino.equals("INT"))    return origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
+        if (destino.equals("SHORT"))  return origen.equals("BYTE");
+        
+        return false;
+    }
+
+    // Promoción de tipos en operaciones
+    public String tipoResultanteAritmetico(String t1, String t2, int linea) {
+        if (t1.equals("BOOLEAN") || t2.equals("BOOLEAN") || t1.equals("STRING") || t2.equals("STRING")) {
+            throw new RuntimeException("Error Semántico [Línea " + linea + "]: Operación aritmética inválida entre " + t1 + " y " + t2);
+        }
+        if (t1.equals("DOUBLE") || t2.equals("DOUBLE")) return "DOUBLE";
+        if (t1.equals("FLOAT") || t2.equals("FLOAT")) return "FLOAT";
+        if (t1.equals("LONG") || t2.equals("LONG")) return "LONG";
+        return "INT"; 
     }
 :}
 
 /* --------------------------
    Sección 2: Terminales
    -------------------------- */
-terminal PUBLIC, PRIVATE, CLASS, IF, ELSE, WHILE, RETURN;
-terminal INT, BOOLEAN, VOID;
+terminal PUBLIC, PRIVATE, CLASS, IF, ELSE, WHILE, DO, FOR, RETURN;
+terminal BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, BOOLEAN, CHAR, STRING_TYPE, VOID;
 terminal Boolean TRUE, FALSE;
-terminal SUMA, RESTA, MULTIPLICACION, DIVISION, ASIGNACION;
-terminal IGUAL_QUE, MENOR_QUE, MAYOR_QUE;
-terminal PUNTO_COMA, COMA, LLAVE_A, LLAVE_C, PARENTESIS_A, PARENTESIS_C;
 
+/* Operadores */
+terminal SUMA, RESTA, MULTIPLICACION, DIVISION, ASIGNACION;
+terminal INCREMENTO, DECREMENTO;
+terminal IGUAL_QUE, MENOR_QUE, MAYOR_QUE, MENOR_IGUAL, MAYOR_IGUAL, DIFERENTE;
+terminal AND, OR, NOT;
+
+/* Delimitadores */
+terminal PUNTO_COMA, DOS_PUNTOS, COMA, LLAVE_A, LLAVE_C, PARENTESIS_A, PARENTESIS_C;
+
+/* Literales e ID */
 terminal Integer LITERAL_ENTERO;
 terminal Double  LITERAL_FLOTANTE;
 terminal String  LITERAL_STRING;
+terminal String  LITERAL_CHAR;
 terminal String  ID;
 
 /* --------------------------
    Sección 3: No Terminales
    -------------------------- */
-non terminal programa, clase, modificador_opt;
+non terminal programa, clase, modificador_opt, marcador_entrar, marcador_salir;
 non terminal lista_miembros, miembro;
-non terminal declaracion_var, declaracion_metodo;
-non terminal tipo, bloque, lista_sentencias, sentencia;
-non terminal asignacion_stmt, if_stmt, while_stmt, return_stmt, expr_stmt;
-non terminal expresion;
+non terminal declaracion_local;
+non terminal String tipo, condicion_opt;
+non terminal bloque, bloque_interno, lista_sentencias, sentencia;
+non terminal asignacion_stmt, if_stmt, while_stmt, do_while_stmt, for_stmt, for_each_stmt, return_stmt, expr_stmt;
+non terminal for_init, for_update;
+non terminal String expresion;
 non terminal lista_parametros_opt, lista_parametros, parametro;
+non terminal llamada_metodo, lista_argumentos_opt, lista_argumentos;
 
 /* --------------------------
    Sección 4: Precedencia
    -------------------------- */
-precedence left IGUAL_QUE, MENOR_QUE, MAYOR_QUE;
+precedence left OR;
+precedence left AND;
+precedence left IGUAL_QUE, DIFERENTE;
+precedence left MENOR_QUE, MAYOR_QUE, MENOR_IGUAL, MAYOR_IGUAL;
 precedence left SUMA, RESTA;
 precedence left MULTIPLICACION, DIVISION;
+precedence right NOT, INCREMENTO, DECREMENTO;
 
 /* --------------------------
-   Sección 5: Gramática
+   Sección 5: Gramática LALR
    -------------------------- */
 start with programa;
 
-programa ::= clase 
-           | programa clase 
-           ;
+programa ::= clase | programa clase ;
 
 clase ::= modificador_opt CLASS ID LLAVE_A lista_miembros LLAVE_C ;
 
-modificador_opt ::= PUBLIC 
-                  | PRIVATE 
-                  | /* vacio */ 
-                  ;
+modificador_opt ::= PUBLIC | PRIVATE | /* vacio */ ;
 
-lista_miembros ::= lista_miembros miembro 
-                 | /* vacio */ 
-                 ;
+lista_miembros ::= lista_miembros miembro | /* vacio */ ;
 
-miembro ::= declaracion_var 
-          | declaracion_metodo 
-          ;
+/* Miembros de la clase (Variables globales y Métodos. SÍ aceptan public/private) */
+miembro ::= 
+    modificador_opt tipo:t ID:id ASIGNACION expresion:e PUNTO_COMA 
+    {: 
+        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad de tipos.");
+        declarar(id, t, idleft); 
+    :}
+  | modificador_opt tipo:t ID:id PUNTO_COMA 
+    {: declarar(id, t, idleft); :}
+  | modificador_opt tipo:t ID:id PARENTESIS_A marcador_entrar lista_parametros_opt PARENTESIS_C bloque_interno marcador_salir 
+    {: /* Registro del método */ :}
+  ;
 
-tipo ::= INT 
-       | BOOLEAN 
-       | VOID 
+tipo ::= BYTE   {: RESULT = "BYTE"; :}
+       | SHORT  {: RESULT = "SHORT"; :}
+       | INT    {: RESULT = "INT"; :}
+       | LONG   {: RESULT = "LONG"; :}
+       | FLOAT  {: RESULT = "FLOAT"; :}
+       | DOUBLE {: RESULT = "DOUBLE"; :}
+       | BOOLEAN{: RESULT = "BOOLEAN"; :}
+       | CHAR   {: RESULT = "CHAR"; :}
+       | STRING_TYPE {: RESULT = "STRING"; :}
+       | VOID   {: RESULT = "VOID"; :}
        ;
 
+/* Marcadores para controlar los Scopes de variables */
+marcador_entrar ::= /* vacio */ {: entrarAmbito(); :} ;
+marcador_salir  ::= /* vacio */ {: salirAmbito(); :} ;
+
+/* Declaración Local (Dentro de métodos/ciclos. NO aceptan public/private) */
+declaracion_local ::= 
+    tipo:t ID:id ASIGNACION expresion:e PUNTO_COMA 
+    {: 
+        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad de tipos. No se puede convertir " + e + " a " + t);
+        declarar(id, t, idleft);
+    :}
+  | tipo:t ID:id PUNTO_COMA 
+    {: declarar(id, t, idleft); :}
+  ;
+
 /* Parámetros de Métodos */
-lista_parametros_opt ::= lista_parametros 
-                       | /* vacio */ 
-                       ;
+lista_parametros_opt ::= lista_parametros | /* vacio */ ;
+lista_parametros ::= lista_parametros COMA parametro | parametro ;
+parametro ::= tipo:t ID:id {: declarar(id, t, idleft); :} ;
 
-lista_parametros ::= lista_parametros COMA parametro 
-                   | parametro 
-                   ;
+/* Bloques */
+bloque ::= LLAVE_A marcador_entrar lista_sentencias LLAVE_C marcador_salir ;
+bloque_interno ::= LLAVE_A lista_sentencias LLAVE_C ;
 
-parametro ::= tipo ID ;
+lista_sentencias ::= lista_sentencias sentencia | /* vacio */ ;
 
-declaracion_var ::= modificador_opt tipo ID ASIGNACION expresion PUNTO_COMA 
-                  | modificador_opt tipo ID PUNTO_COMA 
-                  ;
+sentencia ::= declaracion_local | asignacion_stmt | if_stmt | while_stmt | do_while_stmt | for_stmt | for_each_stmt | return_stmt | expr_stmt | bloque ;
 
-/* Método ahora acepta parámetros separados por coma */
-declaracion_metodo ::= modificador_opt tipo ID PARENTESIS_A lista_parametros_opt PARENTESIS_C bloque ;
+/* Asignaciones */
+asignacion_stmt ::= 
+    ID:id ASIGNACION expresion:e PUNTO_COMA 
+    {:
+        String t = obtenerTipo(id, idleft);
+        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad. Se esperaba " + t + " pero llegó " + e);
+    :}
+  | ID:id INCREMENTO PUNTO_COMA {: obtenerTipo(id, idleft); :}
+  | ID:id DECREMENTO PUNTO_COMA {: obtenerTipo(id, idleft); :}
+  ;
 
-bloque ::= LLAVE_A lista_sentencias LLAVE_C ;
+/* ── Estructuras de Control (Validación Lógica) ── */
 
-lista_sentencias ::= lista_sentencias sentencia 
-                   | /* vacio */ 
-                   ;
+if_stmt ::= 
+    IF PARENTESIS_A expresion:e PARENTESIS_C bloque 
+    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'if' debe ser BOOLEAN, no " + e); :}
+  | IF PARENTESIS_A expresion:e PARENTESIS_C bloque ELSE bloque 
+    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'if' debe ser BOOLEAN, no " + e); :}
+  ;
 
-sentencia ::= declaracion_var 
-            | asignacion_stmt 
-            | if_stmt 
-            | while_stmt 
-            | return_stmt
-            | expr_stmt
-            | bloque 
-            ;
+while_stmt ::= 
+    WHILE PARENTESIS_A expresion:e PARENTESIS_C bloque 
+    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'while' debe ser BOOLEAN, no " + e); :}
+  ;
 
-asignacion_stmt ::= ID ASIGNACION expresion PUNTO_COMA ;
+do_while_stmt ::= 
+    DO bloque WHILE PARENTESIS_A expresion:e PARENTESIS_C PUNTO_COMA
+    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'do-while' debe ser BOOLEAN."); :}
+  ;
 
-/* Soporte para "return resultado;" y "resultado;" */
-return_stmt ::= RETURN expresion PUNTO_COMA 
-              | RETURN PUNTO_COMA ;
+/* Ciclo FOR Clásico (sin conflictos de punto y coma) */
+for_init ::= 
+    tipo:t ID:id ASIGNACION expresion:e 
+    {: 
+        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad de tipos.");
+        declarar(id, t, idleft);
+    :}
+  | tipo:t ID:id 
+    {: declarar(id, t, idleft); :}
+  | ID:id ASIGNACION expresion:e 
+    {:
+        String t = obtenerTipo(id, idleft);
+        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad.");
+    :}
+  | /* vacio */
+  ;
+
+condicion_opt ::= expresion:e {: RESULT = e; :} | /* vacio */ {: RESULT = "BOOLEAN"; :} ;
+
+for_update ::= ID:id INCREMENTO {: obtenerTipo(id, idleft); :}
+             | ID:id DECREMENTO {: obtenerTipo(id, idleft); :}
+             | ID:id ASIGNACION expresion:e 
+               {:
+                   String t = obtenerTipo(id, idleft);
+                   if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico.");
+               :}
+             | /* vacio */
+             ;
+
+for_stmt ::= 
+    FOR PARENTESIS_A marcador_entrar for_init PUNTO_COMA condicion_opt:e PUNTO_COMA for_update PARENTESIS_C bloque_interno marcador_salir
+    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'for' debe ser BOOLEAN."); :}
+  ;
+
+/* Ciclo FOR EACH */
+for_each_stmt ::=
+    FOR PARENTESIS_A marcador_entrar tipo:t ID:id DOS_PUNTOS expresion:e PARENTESIS_C bloque_interno marcador_salir
+    {: declarar(id, t, idleft); :}
+  ;
+
+return_stmt ::= RETURN expresion PUNTO_COMA | RETURN PUNTO_COMA ;
 expr_stmt   ::= expresion PUNTO_COMA ;
 
-if_stmt ::= IF PARENTESIS_A expresion PARENTESIS_C bloque 
-          | IF PARENTESIS_A expresion PARENTESIS_C bloque ELSE bloque 
-          ;
+/* ── Expresiones y Tipos Resultantes ── */
 
-while_stmt ::= WHILE PARENTESIS_A expresion PARENTESIS_C bloque ;
+expresion ::= 
+    LITERAL_ENTERO:v   {: RESULT = "INT"; :}
+  | LITERAL_FLOTANTE:v {: RESULT = "DOUBLE"; :}
+  | LITERAL_STRING:v   {: RESULT = "STRING"; :}
+  | LITERAL_CHAR:v     {: RESULT = "CHAR"; :}
+  | TRUE               {: RESULT = "BOOLEAN"; :}
+  | FALSE              {: RESULT = "BOOLEAN"; :}
+  | ID:id              {: RESULT = obtenerTipo(id, idleft); :}
+  | llamada_metodo     {: RESULT = "VOID"; /* Por ahora asume que el método existe */ :}
+  
+  // Aritmética
+  | expresion:e1 SUMA expresion:e2           {: RESULT = e1.equals("STRING") || e2.equals("STRING") ? "STRING" : tipoResultanteAritmetico(e1, e2, e1left); :}
+  | expresion:e1 RESTA expresion:e2          {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
+  | expresion:e1 MULTIPLICACION expresion:e2 {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
+  | expresion:e1 DIVISION expresion:e2       {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
+  
+  // Relacionales
+  | expresion:e1 IGUAL_QUE expresion:e2      {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 DIFERENTE expresion:e2      {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MENOR_QUE expresion:e2      {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MAYOR_QUE expresion:e2      {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MENOR_IGUAL expresion:e2    {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MAYOR_IGUAL expresion:e2    {: RESULT = "BOOLEAN"; :}
+  
+  // Lógicos
+  | expresion:e1 AND expresion:e2 
+    {: if(!e1.equals("BOOLEAN") || !e2.equals("BOOLEAN")) throw new RuntimeException("Error Semántico: AND (&&) requiere BOOLEAN."); RESULT = "BOOLEAN"; :}
+  | expresion:e1 OR expresion:e2  
+    {: if(!e1.equals("BOOLEAN") || !e2.equals("BOOLEAN")) throw new RuntimeException("Error Semántico: OR (||) requiere BOOLEAN."); RESULT = "BOOLEAN"; :}
+  | NOT expresion:e 
+    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Semántico: NOT (!) requiere BOOLEAN."); RESULT = "BOOLEAN"; :}
+  
+  | PARENTESIS_A expresion:e PARENTESIS_C    {: RESULT = e; :}
+  ;
 
-expresion ::= LITERAL_ENTERO 
-            | LITERAL_FLOTANTE 
-            | LITERAL_STRING 
-            | TRUE 
-            | FALSE 
-            | ID 
-            | expresion SUMA expresion 
-            | expresion RESTA expresion 
-            | expresion MULTIPLICACION expresion 
-            | expresion DIVISION expresion 
-            | expresion IGUAL_QUE expresion 
-            | expresion MENOR_QUE expresion 
-            | expresion MAYOR_QUE expresion 
-            | PARENTESIS_A expresion PARENTESIS_C 
-            ;
+/* Llamada a Método */
+lista_argumentos_opt ::= lista_argumentos | /* vacio */ ;
+lista_argumentos ::= lista_argumentos COMA expresion | expresion ;
+llamada_metodo ::= ID PARENTESIS_A lista_argumentos_opt PARENTESIS_C ;

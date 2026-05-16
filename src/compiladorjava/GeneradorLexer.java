@@ -25,10 +25,10 @@ public class GeneradorLexer {
             // 3. Ejecutar JFlex usando el arreglo de opciones
             jflex.Main.generate(opcionesJFlex);
 
-            System.out.println("✔ Lexer.java generado con éxito.");
+            System.out.println("Lexer.java generado con éxito.");
 
         } catch (Exception e) {
-            System.err.println("✖ Hubo un error al compilar el archivo .flex");
+            System.err.println("Hubo un error al compilar el archivo .flex");
             e.printStackTrace();
         }
     }

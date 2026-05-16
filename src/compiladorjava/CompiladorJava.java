@@ -470,7 +470,7 @@ public class CompiladorJava extends JFrame {
         } catch (Exception ex) {
             System.setErr(errOriginal);
             appendTexto(salidaExcepciones,
-                    "✖  Error Léxico interno\n\n" + ex.getMessage() + "\n", COLOR_ERR, false);
+                    " Error Léxico interno\n\n" + ex.getMessage() + "\n", COLOR_ERR, false);
             return;
         }
 
@@ -490,7 +490,7 @@ public class CompiladorJava extends JFrame {
             System.setErr(errOriginal);
             String errCapturado = errBuf.toString().trim();
             appendTexto(salidaExcepciones,
-                    "✖  Error Sintáctico\n\n", COLOR_ERR, true);
+                    " Error Sintáctico\n\n", COLOR_ERR, true);
             if (!errCapturado.isEmpty()) {
                 appendTexto(salidaExcepciones, errCapturado + "\n", COLOR_ERR, false);
             } else {
@@ -505,19 +505,19 @@ public class CompiladorJava extends JFrame {
         // Mostrar errores léxicos que el Lexer haya impreso a stderr
         String errLex = errBuf.toString().trim();
         if (!errLex.isEmpty()) {
-            appendTexto(salidaExcepciones, "\n⚠  Advertencias Léxicas\n\n", COLOR_ERR, true);
+            appendTexto(salidaExcepciones, "\n  Advertencias Léxicas\n\n", COLOR_ERR, true);
             appendTexto(salidaExcepciones, errLex + "\n", COLOR_ERR, false);
             sinErrores = false;
         }
 
         if (sinErrores) {
-            appendTexto(salidaResultado, "✔  Análisis completado sin errores.\n\n",
+            appendTexto(salidaResultado, "  Análisis completado sin errores.\n\n",
                     COLOR_OK, true);
             appendTexto(salidaExcepciones, "0 excepciones detectadas.", TEXT_MUTED, false);
             construirTrazaYSimbolos(tokens);
         } else {
             appendTexto(salidaResultado,
-                    "✖  El código contiene errores. Revisa la pestaña Excepciones.\n",
+                    "  El código contiene errores. Revisa la pestaña Excepciones.\n",
                     COLOR_ERR, false);
             // Aun así mostramos los símbolos que pudimos detectar
             construirTrazaYSimbolos(tokens);
@@ -601,6 +601,9 @@ public class CompiladorJava extends JFrame {
             } else if (tokens.get(i).sym == sym.PUNTO_COMA) {
                 i++; // declaración sin valor inicial
                 valor = valorDefault(tipoDecl);
+            } else if (tokens.get(i).sym == sym.COMA || tokens.get(i).sym == sym.PARENTESIS_C) {
+                i++; 
+                valor = "Parámetro"; 
             } else {
                 // Estructura desconocida: avanzar
                 i++;
@@ -697,7 +700,10 @@ public class CompiladorJava extends JFrame {
     }
 
     private Object aplicarOp(int op, Object a, Object b) {
-        if (a == null || b == null) return null;
+        if (a == null || b == null) return "Parámetro";
+        if ("Parámetro".equals(a) || "Parámetro".equals(b)) {
+            return "null [no asignado]";
+        }
         try {
             if (a instanceof Boolean || b instanceof Boolean) return a; // no operable
             if (a instanceof String  || b instanceof String)
@@ -995,7 +1001,7 @@ public class CompiladorJava extends JFrame {
             "\n" +
             "    public int suma(int a, int b) {\n" +
             "        int resultado = a + b;\n" +
-            "        resultado;\n" +
+            "        return resultado;\n" +
             "    }\n" +
             "\n" +
             "    public void demo() {\n" +
