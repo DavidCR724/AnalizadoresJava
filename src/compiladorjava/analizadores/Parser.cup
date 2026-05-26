@@ -7,81 +7,135 @@ import java_cup.runtime.*;
 import java.util.Stack;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 
+/* ============================================================
+   CAMBIO CLAVE 1 — parser code
+
+   Antes: syntax_error y unrecovered_syntax_error imprimían a
+   System.err y tiraban excepción. Eso terminaba el parse al
+   primer problema.
+
+   Ahora: ambos métodos agregan a `errores` (lista pública).
+   unrecovered_syntax_error llama done_parsing() para detener
+   limpiamente SIN lanzar excepción, permitiendo que
+   CompiladorJava.java continúe y lea todos los errores.
+   ============================================================ */
 parser code {:
+    // Lista donde se acumula CADA error encontrado (sintáctico y semántico).
+    // CompiladorJava.java la lee después de llamar a parser.parse().
+    public List<String> errores = new ArrayList<>();
+
     public void syntax_error(Symbol s) {
-        System.err.println("Error Sintáctico en la Línea " + (s.left) + 
-                           " Columna " + s.right + ". No se esperaba: " + s.value);
+        String tok = s.value != null ? s.value.toString() : "fin de entrada";
+        errores.add("Error Sintáctico en L" + s.left
+                + ": token inesperado '" + tok + "'");
     }
 
     public void unrecovered_syntax_error(Symbol s) throws java.lang.Exception {
-        System.err.println("Error Irrecuperable en la Línea " + 
-                           (s.left)+ " Columna "+s.right + ". Componente " + s.value + " no reconocido.");
+        // No relanzamos excepción: detenemos limpiamente y dejamos que
+        // CompiladorJava.java recoja todo lo que hay en `errores`.
+        String tok = s.value != null ? s.value.toString() : "fin de entrada";
+        errores.add("Error Irrecuperable en L" + s.left
+                + ": no se puede continuar desde '" + tok
+                + "'. Revisa la sintaxis en esa línea.");
+        done_parsing();
     }
 :}
 
+/* ============================================================
+   CAMBIO CLAVE 2 — action code
+
+   Antes: declarar(), obtenerTipo() y tipoResultanteAritmetico()
+   lanzaban RuntimeException. Eso escapaba de CUP y mataba el
+   parse inmediatamente.
+
+   Ahora: usan parser.errores.add(...) y retornan un valor
+   "seguro" (generalmente "INT") para que el análisis pueda
+   continuar con la siguiente sentencia.
+   ============================================================ */
 action code {:
     // ==========================================================
     //  CEREBRO SEMÁNTICO (Tabla de Símbolos y Tipos Integrada)
     // ==========================================================
-    
-    // Control de Ámbitos (Scopes)
-    Stack<Map<String, String>> ambitos = new Stack<>();
 
-    // Inicializamos el ámbito global al instanciar
+    Stack<Map<String, String>> ambitos = new Stack<>();
     { ambitos.push(new HashMap<>()); }
 
-    public void entrarAmbito() { ambitos.push(new HashMap<>()); }
-    public void salirAmbito()  { if(ambitos.size() > 1) ambitos.pop(); }
+    // Tipo de retorno del método que se está parseando en este momento.
+    // Se actualiza cada vez que se entra al cuerpo de un método.
+    String tipoRetornoActual = "VOID";
 
-    // Declaración de variables
+    public void entrarAmbito() { ambitos.push(new HashMap<>()); }
+    public void salirAmbito()  { if (ambitos.size() > 1) ambitos.pop(); }
+
+    // Registra una variable en el ámbito actual.
+    // Ya NO lanza excepción — agrega el error a la lista y retorna.
     public void declarar(String id, String tipo, int linea) {
         if (tipo.equals("VOID")) {
-            throw new RuntimeException("Error Semántico [Línea " + linea + "]: No se pueden declarar variables de tipo 'void'.");
+            parser.errores.add("Error Semántico [Línea " + linea
+                    + "]: No se pueden declarar variables de tipo 'void'.");
+            return;
         }
         if (ambitos.peek().containsKey(id)) {
-            throw new RuntimeException("Error Semántico [Línea " + linea + "]: La variable '" + id + "' ya está declarada en este ámbito.");
+            parser.errores.add("Error Semántico [Línea " + linea
+                    + "]: La variable '" + id + "' ya está declarada en este ámbito.");
+            return;
         }
         ambitos.peek().put(id, tipo.toUpperCase());
     }
 
-    // Búsqueda de variables
+    // Busca el tipo de una variable en los ámbitos.
+    // Ya NO lanza excepción — agrega el error y retorna "INT" como tipo seguro
+    // para que las reglas que consumen el tipo puedan seguir parseando.
     public String obtenerTipo(String id, int linea) {
-        for(int i = ambitos.size() - 1; i >= 0; i--) {
-            if(ambitos.get(i).containsKey(id)) {
+        for (int i = ambitos.size() - 1; i >= 0; i--) {
+            if (ambitos.get(i).containsKey(id)) {
                 return ambitos.get(i).get(id);
             }
         }
-        throw new RuntimeException("Error Semántico [Línea " + linea + "]: Variable '" + id + "' no ha sido declarada.");
+        parser.errores.add("Error Semántico [Línea " + linea
+                + "]: Variable '" + id + "' no ha sido declarada.");
+        return "INT"; // tipo seguro para no romper el árbol de derivación
     }
 
-    // Reglas de Casteo Implícito (Widening)
+    // Reglas de casteo implícito (widening). Sin cambios en lógica.
     public boolean esCompatible(String destino, String origen) {
         destino = destino.toUpperCase();
-        origen = origen.toUpperCase();
-        
-        if (destino.equals(origen)) return true;
-        if (destino.equals("STRING")) return true; // Todo se puede concatenar a String
-        
-        // Jerarquía numérica: byte -> short -> int -> long -> float -> double
-        if (destino.equals("DOUBLE")) return origen.equals("FLOAT") || origen.equals("LONG") || origen.equals("INT") || origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
-        if (destino.equals("FLOAT"))  return origen.equals("LONG") || origen.equals("INT") || origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
-        if (destino.equals("LONG"))   return origen.equals("INT") || origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
-        if (destino.equals("INT"))    return origen.equals("SHORT") || origen.equals("BYTE") || origen.equals("CHAR");
+        origen  = origen.toUpperCase();
+
+        if (destino.equals(origen))   return true;
+        if (destino.equals("STRING")) return true; // concatenación siempre válida
+
+        if (destino.equals("DOUBLE")) return origen.equals("FLOAT")  || origen.equals("LONG")
+                                            || origen.equals("INT")   || origen.equals("SHORT")
+                                            || origen.equals("BYTE")  || origen.equals("CHAR");
+        if (destino.equals("FLOAT"))  return origen.equals("LONG")   || origen.equals("INT")
+                                            || origen.equals("SHORT") || origen.equals("BYTE")
+                                            || origen.equals("CHAR");
+        if (destino.equals("LONG"))   return origen.equals("INT")    || origen.equals("SHORT")
+                                            || origen.equals("BYTE")  || origen.equals("CHAR");
+        if (destino.equals("INT"))    return origen.equals("SHORT")  || origen.equals("BYTE")
+                                            || origen.equals("CHAR");
         if (destino.equals("SHORT"))  return origen.equals("BYTE");
-        
         return false;
     }
 
-    // Promoción de tipos en operaciones
+    // Calcula el tipo resultante de una operación aritmética.
+    // Ya NO lanza excepción — agrega el error y retorna "INT" como tipo seguro.
     public String tipoResultanteAritmetico(String t1, String t2, int linea) {
-        if (t1.equals("BOOLEAN") || t2.equals("BOOLEAN") || t1.equals("STRING") || t2.equals("STRING")) {
-            throw new RuntimeException("Error Semántico [Línea " + linea + "]: Operación aritmética inválida entre " + t1 + " y " + t2);
+        if (t1.equals("BOOLEAN") || t2.equals("BOOLEAN")
+                || t1.equals("STRING") || t2.equals("STRING")) {
+            parser.errores.add("Error Semántico [Línea " + linea
+                    + "]: Operación aritmética inválida entre tipos "
+                    + t1 + " y " + t2 + ".");
+            return "INT"; // tipo seguro para continuar
         }
         if (t1.equals("DOUBLE") || t2.equals("DOUBLE")) return "DOUBLE";
-        if (t1.equals("FLOAT") || t2.equals("FLOAT")) return "FLOAT";
-        if (t1.equals("LONG") || t2.equals("LONG")) return "LONG";
-        return "INT"; 
+        if (t1.equals("FLOAT")  || t2.equals("FLOAT"))  return "FLOAT";
+        if (t1.equals("LONG")   || t2.equals("LONG"))   return "LONG";
+        return "INT";
     }
 :}
 
@@ -146,45 +200,68 @@ modificador_opt ::= PUBLIC | PRIVATE | /* vacio */ ;
 
 lista_miembros ::= lista_miembros miembro | /* vacio */ ;
 
-/* Miembros de la clase (Variables globales y Métodos. SÍ aceptan public/private) */
-miembro ::= 
-    modificador_opt tipo:t ID:id ASIGNACION expresion:e PUNTO_COMA 
-    {: 
-        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad de tipos.");
-        declarar(id, t, idleft); 
-    :}
-  | modificador_opt tipo:t ID:id PUNTO_COMA 
-    {: declarar(id, t, idleft); :}
-  | modificador_opt tipo:t ID:id PARENTESIS_A marcador_entrar lista_parametros_opt PARENTESIS_C bloque_interno marcador_salir 
-    {: /* Registro del método */ :}
-  ;
-
-tipo ::= BYTE   {: RESULT = "BYTE"; :}
-       | SHORT  {: RESULT = "SHORT"; :}
-       | INT    {: RESULT = "INT"; :}
-       | LONG   {: RESULT = "LONG"; :}
-       | FLOAT  {: RESULT = "FLOAT"; :}
-       | DOUBLE {: RESULT = "DOUBLE"; :}
-       | BOOLEAN{: RESULT = "BOOLEAN"; :}
-       | CHAR   {: RESULT = "CHAR"; :}
-       | STRING_TYPE {: RESULT = "STRING"; :}
-       | VOID   {: RESULT = "VOID"; :}
-       ;
-
-/* Marcadores para controlar los Scopes de variables */
-marcador_entrar ::= /* vacio */ {: entrarAmbito(); :} ;
-marcador_salir  ::= /* vacio */ {: salirAmbito(); :} ;
-
-/* Declaración Local (Dentro de métodos/ciclos. NO aceptan public/private) */
-declaracion_local ::= 
-    tipo:t ID:id ASIGNACION expresion:e PUNTO_COMA 
-    {: 
-        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad de tipos. No se puede convertir " + e + " a " + t);
+/* Miembros de la clase */
+miembro ::=
+    modificador_opt tipo:t ID:id ASIGNACION expresion:e PUNTO_COMA
+    {:
+        if (!esCompatible(t, e))
+            parser.errores.add("Error Semántico [Línea " + idleft
+                    + "]: Incompatibilidad de tipos. No se puede asignar "
+                    + e + " a variable de tipo " + t + ".");
         declarar(id, t, idleft);
     :}
-  | tipo:t ID:id PUNTO_COMA 
+  | modificador_opt tipo:t ID:id PUNTO_COMA
+    {: declarar(id, t, idleft); :}
+  | modificador_opt tipo:t ID:id PARENTESIS_A
+    /* Acción de medio de regla (mid-rule action):
+       Se ejecuta ANTES de parsear el cuerpo del método.
+       Aquí abrimos el ámbito Y guardamos el tipo de retorno
+       declarado, para que return_stmt pueda verificarlo. */
+    {: entrarAmbito(); tipoRetornoActual = t; :}
+    lista_parametros_opt PARENTESIS_C bloque_interno marcador_salir
+    {: /* fin del método */ :}
+  ;
+
+tipo ::= BYTE        {: RESULT = "BYTE";    :}
+       | SHORT       {: RESULT = "SHORT";   :}
+       | INT         {: RESULT = "INT";     :}
+       | LONG        {: RESULT = "LONG";    :}
+       | FLOAT       {: RESULT = "FLOAT";   :}
+       | DOUBLE      {: RESULT = "DOUBLE";  :}
+       | BOOLEAN     {: RESULT = "BOOLEAN"; :}
+       | CHAR        {: RESULT = "CHAR";    :}
+       | STRING_TYPE {: RESULT = "STRING";  :}
+       | VOID        {: RESULT = "VOID";    :}
+       ;
+
+/* Marcadores de scope */
+marcador_entrar ::= /* vacio */ {: entrarAmbito(); :} ;
+marcador_salir  ::= /* vacio */ {: salirAmbito();  :} ;
+
+/* ============================================================
+   CAMBIO CLAVE 3 — Recuperación de errores sintácticos
+
+   Las reglas  `error PUNTO_COMA`  le dicen a CUP: "si algo en
+   una declaración/sentencia no encaja, descarta tokens hasta
+   encontrar un ';' y luego continúa".  Sin estas reglas, el
+   primer error sintáctico hace que el parser se rinda.
+   ============================================================ */
+
+/* Declaración Local */
+declaracion_local ::=
+    tipo:t ID:id ASIGNACION expresion:e PUNTO_COMA
+    {:
+        if (!esCompatible(t, e))
+            parser.errores.add("Error Semántico [Línea " + idleft
+                    + "]: Incompatibilidad de tipos. No se puede convertir "
+                    + e + " a " + t + ".");
+        declarar(id, t, idleft);
+    :}
+  | tipo:t ID:id PUNTO_COMA
     {: declarar(id, t, idleft); :}
   ;
+  /* NOTA: La recuperación de error (error PUNTO_COMA) se maneja en `sentencia`,
+     no aquí, para evitar el conflicto Reduce/Reduce con CUP. */
 
 /* Parámetros de Métodos */
 lista_parametros_opt ::= lista_parametros | /* vacio */ ;
@@ -192,75 +269,118 @@ lista_parametros ::= lista_parametros COMA parametro | parametro ;
 parametro ::= tipo:t ID:id {: declarar(id, t, idleft); :} ;
 
 /* Bloques */
-bloque ::= LLAVE_A marcador_entrar lista_sentencias LLAVE_C marcador_salir ;
-bloque_interno ::= LLAVE_A lista_sentencias LLAVE_C ;
+bloque          ::= LLAVE_A marcador_entrar lista_sentencias LLAVE_C marcador_salir ;
+bloque_interno  ::= LLAVE_A lista_sentencias LLAVE_C ;
 
 lista_sentencias ::= lista_sentencias sentencia | /* vacio */ ;
 
-sentencia ::= declaracion_local | asignacion_stmt | if_stmt | while_stmt | do_while_stmt | for_stmt | for_each_stmt | return_stmt | expr_stmt | bloque ;
+/* La alternativa  `error PUNTO_COMA`  aquí garantiza que una sentencia
+   malformada no detenga el análisis del resto del cuerpo del método. */
+sentencia ::=
+    declaracion_local
+  | asignacion_stmt
+  | if_stmt
+  | while_stmt
+  | do_while_stmt
+  | for_stmt
+  | for_each_stmt
+  | return_stmt
+  | expr_stmt
+  | bloque
+  | error PUNTO_COMA
+    {: /* Sentencia no reconocida: skip hasta ';' y continuamos. */ :}
+  ;
 
 /* Asignaciones */
-asignacion_stmt ::= 
-    ID:id ASIGNACION expresion:e PUNTO_COMA 
+asignacion_stmt ::=
+    ID:id ASIGNACION expresion:e PUNTO_COMA
     {:
         String t = obtenerTipo(id, idleft);
-        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad. Se esperaba " + t + " pero llegó " + e);
+        if (!esCompatible(t, e))
+            parser.errores.add("Error Semántico [Línea " + idleft
+                    + "]: Incompatibilidad. Se esperaba " + t
+                    + " pero se asignó " + e + ".");
     :}
   | ID:id INCREMENTO PUNTO_COMA {: obtenerTipo(id, idleft); :}
   | ID:id DECREMENTO PUNTO_COMA {: obtenerTipo(id, idleft); :}
   ;
 
-/* ── Estructuras de Control (Validación Lógica) ── */
-
-if_stmt ::= 
-    IF PARENTESIS_A expresion:e PARENTESIS_C bloque 
-    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'if' debe ser BOOLEAN, no " + e); :}
-  | IF PARENTESIS_A expresion:e PARENTESIS_C bloque ELSE bloque 
-    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'if' debe ser BOOLEAN, no " + e); :}
+/* Estructuras de Control */
+if_stmt ::=
+    IF PARENTESIS_A expresion:e PARENTESIS_C bloque
+    {:
+        if (!e.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + eleft
+                    + "]: La condición del 'if' debe ser BOOLEAN, no " + e + ".");
+    :}
+  | IF PARENTESIS_A expresion:e PARENTESIS_C bloque ELSE bloque
+    {:
+        if (!e.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + eleft
+                    + "]: La condición del 'if' debe ser BOOLEAN, no " + e + ".");
+    :}
   ;
 
-while_stmt ::= 
-    WHILE PARENTESIS_A expresion:e PARENTESIS_C bloque 
-    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'while' debe ser BOOLEAN, no " + e); :}
+while_stmt ::=
+    WHILE PARENTESIS_A expresion:e PARENTESIS_C bloque
+    {:
+        if (!e.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + eleft
+                    + "]: La condición del 'while' debe ser BOOLEAN, no " + e + ".");
+    :}
   ;
 
-do_while_stmt ::= 
+do_while_stmt ::=
     DO bloque WHILE PARENTESIS_A expresion:e PARENTESIS_C PUNTO_COMA
-    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'do-while' debe ser BOOLEAN."); :}
+    {:
+        if (!e.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + eleft
+                    + "]: La condición del 'do-while' debe ser BOOLEAN.");
+    :}
   ;
 
-/* Ciclo FOR Clásico (sin conflictos de punto y coma) */
-for_init ::= 
-    tipo:t ID:id ASIGNACION expresion:e 
-    {: 
-        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad de tipos.");
+/* Ciclo FOR Clásico */
+for_init ::=
+    tipo:t ID:id ASIGNACION expresion:e
+    {:
+        if (!esCompatible(t, e))
+            parser.errores.add("Error Semántico [Línea " + idleft
+                    + "]: Incompatibilidad de tipos en inicialización del for.");
         declarar(id, t, idleft);
     :}
-  | tipo:t ID:id 
-    {: declarar(id, t, idleft); :}
-  | ID:id ASIGNACION expresion:e 
+  | tipo:t ID:id              {: declarar(id, t, idleft); :}
+  | ID:id ASIGNACION expresion:e
     {:
         String t = obtenerTipo(id, idleft);
-        if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico [Línea " + idleft + "]: Incompatibilidad.");
+        if (!esCompatible(t, e))
+            parser.errores.add("Error Semántico [Línea " + idleft
+                    + "]: Incompatibilidad en inicialización del for.");
     :}
   | /* vacio */
   ;
 
 condicion_opt ::= expresion:e {: RESULT = e; :} | /* vacio */ {: RESULT = "BOOLEAN"; :} ;
 
-for_update ::= ID:id INCREMENTO {: obtenerTipo(id, idleft); :}
-             | ID:id DECREMENTO {: obtenerTipo(id, idleft); :}
-             | ID:id ASIGNACION expresion:e 
-               {:
-                   String t = obtenerTipo(id, idleft);
-                   if(!esCompatible(t, e)) throw new RuntimeException("Error Semántico.");
-               :}
-             | /* vacio */
-             ;
+for_update ::=
+    ID:id INCREMENTO {: obtenerTipo(id, idleft); :}
+  | ID:id DECREMENTO {: obtenerTipo(id, idleft); :}
+  | ID:id ASIGNACION expresion:e
+    {:
+        String t = obtenerTipo(id, idleft);
+        if (!esCompatible(t, e))
+            parser.errores.add("Error Semántico [Línea " + idleft
+                    + "]: Incompatibilidad en actualización del for.");
+    :}
+  | /* vacio */
+  ;
 
-for_stmt ::= 
+for_stmt ::=
     FOR PARENTESIS_A marcador_entrar for_init PUNTO_COMA condicion_opt:e PUNTO_COMA for_update PARENTESIS_C bloque_interno marcador_salir
-    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Lógico [Línea " + eleft + "]: La condición del 'for' debe ser BOOLEAN."); :}
+    {:
+        if (!e.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + eleft
+                    + "]: La condición del 'for' debe ser BOOLEAN.");
+    :}
   ;
 
 /* Ciclo FOR EACH */
@@ -269,47 +389,87 @@ for_each_stmt ::=
     {: declarar(id, t, idleft); :}
   ;
 
-return_stmt ::= RETURN expresion PUNTO_COMA | RETURN PUNTO_COMA ;
+return_stmt ::=
+    RETURN:r expresion:e PUNTO_COMA
+    {:
+        if (tipoRetornoActual.equals("VOID")) {
+            parser.errores.add("Error Semántico [Línea " + rleft
+                    + "]: El método es 'void' y no puede retornar un valor.");
+        } else if (!esCompatible(tipoRetornoActual, e)) {
+            parser.errores.add("Error Semántico [Línea " + rleft
+                    + "]: El método declara retornar '"  + tipoRetornoActual
+                    + "' pero se intenta retornar '" + e + "'.");
+        }
+    :}
+  | RETURN:r PUNTO_COMA
+    {:
+        if (!tipoRetornoActual.equals("VOID")) {
+            parser.errores.add("Error Semántico [Línea " + rleft
+                    + "]: El método declara retornar '" + tipoRetornoActual
+                    + "' pero 'return' no devuelve ningún valor.");
+        }
+    :}
+  ;
 expr_stmt   ::= expresion PUNTO_COMA ;
 
 /* ── Expresiones y Tipos Resultantes ── */
-
-expresion ::= 
-    LITERAL_ENTERO:v   {: RESULT = "INT"; :}
-  | LITERAL_FLOTANTE:v {: RESULT = "DOUBLE"; :}
-  | LITERAL_STRING:v   {: RESULT = "STRING"; :}
-  | LITERAL_CHAR:v     {: RESULT = "CHAR"; :}
+expresion ::=
+    LITERAL_ENTERO:v   {: RESULT = "INT";     :}
+  | LITERAL_FLOTANTE:v {: RESULT = "DOUBLE";  :}
+  | LITERAL_STRING:v   {: RESULT = "STRING";  :}
+  | LITERAL_CHAR:v     {: RESULT = "CHAR";    :}
   | TRUE               {: RESULT = "BOOLEAN"; :}
   | FALSE              {: RESULT = "BOOLEAN"; :}
   | ID:id              {: RESULT = obtenerTipo(id, idleft); :}
-  | llamada_metodo     {: RESULT = "VOID"; /* Por ahora asume que el método existe */ :}
-  
+  | llamada_metodo     {: RESULT = "VOID"; :}
+
   // Aritmética
-  | expresion:e1 SUMA expresion:e2           {: RESULT = e1.equals("STRING") || e2.equals("STRING") ? "STRING" : tipoResultanteAritmetico(e1, e2, e1left); :}
-  | expresion:e1 RESTA expresion:e2          {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
-  | expresion:e1 MULTIPLICACION expresion:e2 {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
-  | expresion:e1 DIVISION expresion:e2       {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
-  
+  | expresion:e1 SUMA expresion:e2
+    {: RESULT = e1.equals("STRING") || e2.equals("STRING")
+             ? "STRING"
+             : tipoResultanteAritmetico(e1, e2, e1left); :}
+  | expresion:e1 RESTA expresion:e2
+    {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
+  | expresion:e1 MULTIPLICACION expresion:e2
+    {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
+  | expresion:e1 DIVISION expresion:e2
+    {: RESULT = tipoResultanteAritmetico(e1, e2, e1left); :}
+
   // Relacionales
-  | expresion:e1 IGUAL_QUE expresion:e2      {: RESULT = "BOOLEAN"; :}
-  | expresion:e1 DIFERENTE expresion:e2      {: RESULT = "BOOLEAN"; :}
-  | expresion:e1 MENOR_QUE expresion:e2      {: RESULT = "BOOLEAN"; :}
-  | expresion:e1 MAYOR_QUE expresion:e2      {: RESULT = "BOOLEAN"; :}
-  | expresion:e1 MENOR_IGUAL expresion:e2    {: RESULT = "BOOLEAN"; :}
-  | expresion:e1 MAYOR_IGUAL expresion:e2    {: RESULT = "BOOLEAN"; :}
-  
+  | expresion:e1 IGUAL_QUE   expresion:e2 {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 DIFERENTE   expresion:e2 {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MENOR_QUE   expresion:e2 {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MAYOR_QUE   expresion:e2 {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MENOR_IGUAL expresion:e2 {: RESULT = "BOOLEAN"; :}
+  | expresion:e1 MAYOR_IGUAL expresion:e2 {: RESULT = "BOOLEAN"; :}
+
   // Lógicos
-  | expresion:e1 AND expresion:e2 
-    {: if(!e1.equals("BOOLEAN") || !e2.equals("BOOLEAN")) throw new RuntimeException("Error Semántico: AND (&&) requiere BOOLEAN."); RESULT = "BOOLEAN"; :}
-  | expresion:e1 OR expresion:e2  
-    {: if(!e1.equals("BOOLEAN") || !e2.equals("BOOLEAN")) throw new RuntimeException("Error Semántico: OR (||) requiere BOOLEAN."); RESULT = "BOOLEAN"; :}
-  | NOT expresion:e 
-    {: if(!e.equals("BOOLEAN")) throw new RuntimeException("Error Semántico: NOT (!) requiere BOOLEAN."); RESULT = "BOOLEAN"; :}
-  
-  | PARENTESIS_A expresion:e PARENTESIS_C    {: RESULT = e; :}
+  | expresion:e1 AND expresion:e2
+    {:
+        if (!e1.equals("BOOLEAN") || !e2.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + e1left
+                    + "]: AND (&&) requiere operandos BOOLEAN, no " + e1 + " y " + e2 + ".");
+        RESULT = "BOOLEAN";
+    :}
+  | expresion:e1 OR expresion:e2
+    {:
+        if (!e1.equals("BOOLEAN") || !e2.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + e1left
+                    + "]: OR (||) requiere operandos BOOLEAN, no " + e1 + " y " + e2 + ".");
+        RESULT = "BOOLEAN";
+    :}
+  | NOT expresion:e
+    {:
+        if (!e.equals("BOOLEAN"))
+            parser.errores.add("Error Semántico [Línea " + eleft
+                    + "]: NOT (!) requiere un operando BOOLEAN, no " + e + ".");
+        RESULT = "BOOLEAN";
+    :}
+
+  | PARENTESIS_A expresion:e PARENTESIS_C {: RESULT = e; :}
   ;
 
 /* Llamada a Método */
 lista_argumentos_opt ::= lista_argumentos | /* vacio */ ;
-lista_argumentos ::= lista_argumentos COMA expresion | expresion ;
-llamada_metodo ::= ID PARENTESIS_A lista_argumentos_opt PARENTESIS_C ;
+lista_argumentos     ::= lista_argumentos COMA expresion | expresion ;
+llamada_metodo       ::= ID PARENTESIS_A lista_argumentos_opt PARENTESIS_C ;

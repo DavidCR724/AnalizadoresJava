@@ -19,16 +19,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AnalizadorJava.java
+ * CompiladorJava.java
  *
- * Vista de analizador léxico/sintáctico para el compilador Java reducido.
+ * Vista de analizador léxico/sintáctico/semántico para el compilador Java reducido.
  * Usa el Lexer (JFlex), Parser (CUP) y sym generados automáticamente.
  *
  * Pestañas:
  *   1. Tokens      → tabla léxica con lexema, patrón, categoría y línea
  *   2. Resultado   → traza de ejecución (variables declaradas con sus valores)
  *   3. Símbolos    → tabla de símbolos (nombre | tipo | valor | línea)
- *   4. Excepciones → errores léxicos y sintácticos
+ *   4. Excepciones → TODOS los errores léxicos, sintácticos y semánticos
  */
 public class CompiladorJava extends JFrame {
 
@@ -37,7 +37,7 @@ public class CompiladorJava extends JFrame {
     // =========================================================
     private static final Color BG_MAIN      = new Color(245, 245, 245);
     private static final Color BG_PANEL     = new Color(255, 255, 255);
-    private static final Color COLOR_ACCENT = new Color(30,  100, 200);   // azul Java
+    private static final Color COLOR_ACCENT = new Color(30,  100, 200);
     private static final Color COLOR_BORDER = new Color(215, 215, 215);
     private static final Color TEXT_LIGHT   = new Color(30,   30,  30);
     private static final Color TEXT_MUTED   = new Color(110, 110, 110);
@@ -74,7 +74,6 @@ public class CompiladorJava extends JFrame {
     private JButton btnLimpiar;
     private JButton btnEjemplo;
 
-    // Captura los errores que el Lexer/Parser imprimen a System.err
     private final StringBuilder bufferErrores = new StringBuilder();
 
     // =========================================================
@@ -110,7 +109,6 @@ public class CompiladorJava extends JFrame {
                 new MatteBorder(0, 0, 1, 0, COLOR_BORDER),
                 new EmptyBorder(12, 20, 12, 20)));
 
-        // Título
         JPanel panelTitulo = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         panelTitulo.setOpaque(false);
         JLabel punto = new JLabel("◆");
@@ -122,7 +120,6 @@ public class CompiladorJava extends JFrame {
         panelTitulo.add(punto);
         panelTitulo.add(titulo);
 
-        // Botones
         JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         panelBotones.setOpaque(false);
 
@@ -197,7 +194,7 @@ public class CompiladorJava extends JFrame {
     }
 
     // =========================================================
-    //  PANEL EDITOR (izquierda)
+    //  PANEL EDITOR
     // =========================================================
     private JPanel crearPanelEditor() {
         JPanel panel = new JPanel(new BorderLayout());
@@ -226,7 +223,7 @@ public class CompiladorJava extends JFrame {
     }
 
     // =========================================================
-    //  PANEL DERECHO  (Tabs + Referencia de tokens)
+    //  PANEL DERECHO
     // =========================================================
     private JSplitPane crearPanelDerecho() {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
@@ -253,7 +250,6 @@ public class CompiladorJava extends JFrame {
         tabs.setFocusable(false);
         tabs.setBorder(new MatteBorder(0, 0, 0, 1, COLOR_BORDER));
 
-        // ── Tab 1: Tokens ─────────────────────────────────────
         String[] colsTokens = {"LEXEMA", "PATRÓN", "CATEGORÍA", "LÍNEA"};
         modeloTokens = new DefaultTableModel(colsTokens, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
@@ -264,10 +260,8 @@ public class CompiladorJava extends JFrame {
         scrollTok.setBorder(null);
         scrollTok.getViewport().setBackground(BG_MAIN);
 
-        // ── Tab 2: Resultado (traza) ──────────────────────────
         salidaResultado = crearAreaTexto();
 
-        // ── Tab 3: Tabla de Símbolos ──────────────────────────
         String[] colsSim = {"IDENTIFICADOR", "TIPO", "VALOR", "LÍNEA"};
         modeloSimbolos = new DefaultTableModel(colsSim, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
@@ -278,7 +272,6 @@ public class CompiladorJava extends JFrame {
         scrollSim.setBorder(null);
         scrollSim.getViewport().setBackground(BG_MAIN);
 
-        // ── Tab 4: Excepciones ────────────────────────────────
         salidaExcepciones = crearAreaTexto();
 
         tabs.addTab("Tokens",      scrollTok);
@@ -309,7 +302,6 @@ public class CompiladorJava extends JFrame {
         h.setPreferredSize(new Dimension(100, 35));
         h.setBorder(new MatteBorder(0, 0, 1, 0, COLOR_BORDER));
 
-        // Columna CATEGORÍA → píldora
         tabla.getColumnModel().getColumn(2).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(
@@ -317,10 +309,8 @@ public class CompiladorJava extends JFrame {
                 JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
                 p.setBackground(sel ? t.getSelectionBackground() : BG_MAIN);
                 p.setBorder(new MatteBorder(0, 0, 1, 0, COLOR_BORDER));
-
                 String categ = value != null ? value.toString() : "";
                 Color[] cols = colorParaCategoria(categ);
-
                 JLabel pill = new JLabel(" " + categ + " ") {
                     @Override protected void paintComponent(Graphics g) {
                         Graphics2D g2 = (Graphics2D) g.create();
@@ -347,18 +337,12 @@ public class CompiladorJava extends JFrame {
 
     private Color[] colorParaCategoria(String cat) {
         switch (cat) {
-            case "RESERVADA":
-                return new Color[]{new Color(255, 245, 210), new Color(150, 80, 0)};
-            case "OPERADOR":
-                return new Color[]{new Color(240, 220, 255), new Color(100, 0, 160)};
-            case "LITERAL":
-                return new Color[]{new Color(220, 250, 230), new Color(0, 110, 50)};
-            case "SEPARADOR":
-                return new Color[]{new Color(235, 235, 235), new Color(80, 80, 80)};
-            case "IDENTIFICADOR":
-                return new Color[]{PILL_BG, PILL_TEXT};
-            default:
-                return new Color[]{COLOR_BORDER, TEXT_MUTED};
+            case "RESERVADA":    return new Color[]{new Color(255, 245, 210), new Color(150, 80, 0)};
+            case "OPERADOR":     return new Color[]{new Color(240, 220, 255), new Color(100, 0, 160)};
+            case "LITERAL":      return new Color[]{new Color(220, 250, 230), new Color(0, 110, 50)};
+            case "SEPARADOR":    return new Color[]{new Color(235, 235, 235), new Color(80, 80, 80)};
+            case "IDENTIFICADOR":return new Color[]{PILL_BG, PILL_TEXT};
+            default:             return new Color[]{COLOR_BORDER, TEXT_MUTED};
         }
     }
 
@@ -381,7 +365,6 @@ public class CompiladorJava extends JFrame {
         h.setPreferredSize(new Dimension(100, 35));
         h.setBorder(new MatteBorder(0, 0, 1, 0, COLOR_BORDER));
 
-        // Columna TIPO → píldora con color por tipo
         tabla.getColumnModel().getColumn(1).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(
@@ -389,20 +372,14 @@ public class CompiladorJava extends JFrame {
                 JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
                 p.setBackground(sel ? t.getSelectionBackground() : BG_MAIN);
                 p.setBorder(new MatteBorder(0, 0, 1, 0, COLOR_BORDER));
-
                 String tipo = value != null ? value.toString() : "";
                 Color bg, fg;
                 switch (tipo) {
-                    case "int":
-                        bg = new Color(220, 240, 255); fg = new Color(0, 80, 160);    break;
-                    case "boolean":
-                        bg = new Color(255, 235, 235); fg = new Color(160, 0, 0);     break;
-                    case "void":
-                        bg = new Color(240, 240, 240); fg = new Color(80, 80, 80);    break;
-                    default:
-                        bg = PILL_BG; fg = PILL_TEXT; break;
+                    case "int":     bg = new Color(220, 240, 255); fg = new Color(0, 80, 160);  break;
+                    case "boolean": bg = new Color(255, 235, 235); fg = new Color(160, 0, 0);   break;
+                    case "void":    bg = new Color(240, 240, 240); fg = new Color(80, 80, 80);  break;
+                    default:        bg = PILL_BG; fg = PILL_TEXT; break;
                 }
-
                 JLabel pill = new JLabel(" " + tipo + " ") {
                     @Override protected void paintComponent(Graphics g) {
                         Graphics2D g2 = (Graphics2D) g.create();
@@ -443,6 +420,15 @@ public class CompiladorJava extends JFrame {
 
     // =========================================================
     //  ANÁLISIS PRINCIPAL
+    //
+    //  Flujo:
+    //    1. Léxico  → lista de tokens
+    //    2. Sintáctico + Semántico → parser.errores  (YA NO lanza excepción)
+    //    3. Mostrar todos los errores acumulados juntos
+    //
+    //  Los errores semánticos viven en Parser.cup (action code).
+    //  Los errores sintácticos los intercepta parser.syntax_error().
+    //  En ningún caso se usa throw: todo va a parser.errores.
     // =========================================================
     private void ejecutarAnalisis() {
         String codigo = editorCodigo.getText().trim();
@@ -454,12 +440,12 @@ public class CompiladorJava extends JFrame {
             return;
         }
 
-        // Redirigir System.err para capturar mensajes del Lexer/Parser
+        // Redirigir stderr para capturar advertencias léxicas del Lexer
         java.io.PrintStream errOriginal = System.err;
         java.io.ByteArrayOutputStream errBuf = new java.io.ByteArrayOutputStream();
         System.setErr(new java.io.PrintStream(errBuf));
 
-        // ── FASE 1: ANÁLISIS LÉXICO ────────────────────────────
+        // ── FASE 1: ANÁLISIS LÉXICO ──────────────────────────────
         List<Symbol> tokens = new ArrayList<>();
         try {
             Lexer lexer = new Lexer(new StringReader(codigo));
@@ -470,76 +456,90 @@ public class CompiladorJava extends JFrame {
         } catch (Exception ex) {
             System.setErr(errOriginal);
             appendTexto(salidaExcepciones,
-                    " Error Léxico interno\n\n" + ex.getMessage() + "\n", COLOR_ERR, false);
+                    "Error léxico interno: " + ex.getMessage() + "\n", COLOR_ERR, false);
             return;
         }
 
-        // Mostrar tokens en la tabla
         mostrarTokensEnTabla(tokens);
 
-        // ── FASE 2: ANÁLISIS SINTÁCTICO ────────────────────────
-        boolean sinErrores = true;
+        // ── FASE 2: ANÁLISIS SINTÁCTICO + SEMÁNTICO ──────────────
+        //
+        // Parser.cup ya maneja todo internamente:
+        //   - syntax_error()             → agrega a parser.errores
+        //   - unrecovered_syntax_error() → agrega a parser.errores + done_parsing()
+        //   - acciones semánticas        → agrega a parser.errores, nunca throws
+        //   - reglas  error PUNTO_COMA   → permiten continuar tras errores sintácticos
+        //
+        // Por eso simplemente creamos el parser, llamamos parse() y leemos la lista.
+        Parser parser = null;
         try {
             java_cup.runtime.DefaultSymbolFactory sf =
                     new java_cup.runtime.DefaultSymbolFactory();
             Lexer lexer2 = new Lexer(new StringReader(codigo));
-            Parser parser = new Parser(lexer2, sf);
+            parser = new Parser(lexer2, sf);
             parser.parse();
         } catch (Exception ex) {
-            sinErrores = false;
-            System.setErr(errOriginal);
-            String errCapturado = errBuf.toString().trim();
-            appendTexto(salidaExcepciones,
-                    " Error Sintáctico\n\n", COLOR_ERR, true);
-            if (!errCapturado.isEmpty()) {
-                appendTexto(salidaExcepciones, errCapturado + "\n", COLOR_ERR, false);
-            } else {
-                String msg = ex.getMessage() != null ? ex.getMessage()
-                                                     : ex.getClass().getSimpleName();
-                appendTexto(salidaExcepciones, msg + "\n", COLOR_ERR, false);
+            // Sólo para errores absolutamente inesperados (no semánticos ni sintácticos)
+            if (parser != null) {
+                String msg = ex.getMessage();
+                if (msg != null && !msg.isBlank()) {
+                    parser.errores.add("Error interno inesperado: " + msg);
+                }
             }
         }
 
+        // Capturar advertencias léxicas impresas a stderr por el Lexer
         System.setErr(errOriginal);
-
-        // Mostrar errores léxicos que el Lexer haya impreso a stderr
         String errLex = errBuf.toString().trim();
         if (!errLex.isEmpty()) {
-            appendTexto(salidaExcepciones, "\n  Advertencias Léxicas\n\n", COLOR_ERR, true);
-            appendTexto(salidaExcepciones, errLex + "\n", COLOR_ERR, false);
-            sinErrores = false;
+            if (parser == null) parser = crearParserVacio();
+            for (String linea : errLex.split("\\n")) {
+                if (!linea.trim().isEmpty()) {
+                    parser.errores.add(0, "Advertencia léxica: " + linea.trim());
+                }
+            }
         }
 
-        if (sinErrores) {
-            appendTexto(salidaResultado, "  Análisis completado sin errores.\n\n",
-                    COLOR_OK, true);
-            appendTexto(salidaExcepciones, "0 excepciones detectadas.", TEXT_MUTED, false);
-            construirTrazaYSimbolos(tokens);
+        // ── MOSTRAR RESULTADOS ────────────────────────────────────
+        List<String> todosLosErrores = (parser != null) ? parser.errores : new ArrayList<>();
+
+        if (todosLosErrores.isEmpty()) {
+            appendTexto(salidaResultado,
+                    "  Análisis completado sin errores.\n\n", COLOR_OK, true);
+            appendTexto(salidaExcepciones,
+                    "0 excepciones detectadas.", TEXT_MUTED, false);
         } else {
             appendTexto(salidaResultado,
-                    "  El código contiene errores. Revisa la pestaña Excepciones.\n",
+                    "  Se encontraron " + todosLosErrores.size()
+                    + " error(es). Revisa la pestaña Excepciones.\n",
                     COLOR_ERR, false);
-            // Aun así mostramos los símbolos que pudimos detectar
-            construirTrazaYSimbolos(tokens);
+            appendTexto(salidaExcepciones,
+                    " " + todosLosErrores.size() + " excepción(es) detectada(s)\n\n",
+                    COLOR_ERR, true);
+            for (String err : todosLosErrores) {
+                appendTexto(salidaExcepciones, "  ✗ " + err + "\n", COLOR_ERR, false);
+            }
+        }
+
+        construirTrazaYSimbolos(tokens);
+    }
+
+    /** Crea un Parser mínimo sin lexer real, solo para tener acceso a la lista de errores. */
+    private Parser crearParserVacio() {
+        try {
+            java_cup.runtime.DefaultSymbolFactory sf =
+                    new java_cup.runtime.DefaultSymbolFactory();
+            Lexer dummy = new Lexer(new StringReader(""));
+            return new Parser(dummy, sf);
+        } catch (Exception e) {
+            return null;
         }
     }
 
     // =========================================================
     //  TRAZA DE EJECUCIÓN + TABLA DE SÍMBOLOS
-    //
-    //  Recorre la lista de tokens (emitida por el Lexer) e
-    //  interpreta sentencias de declaración de variables:
-    //
-    //    [modificador]  TIPO  ID  ASIGNACION  expresion  PUNTO_COMA
-    //    [modificador]  TIPO  ID  PUNTO_COMA
-    //
-    //  Los tokens de modificador (PUBLIC / PRIVATE) se ignoran en
-    //  la traza pero se registran.
-    //  Las expresiones se evalúan recursivamente.
     // =========================================================
     private void construirTrazaYSimbolos(List<Symbol> tokens) {
-
-        // tablas locales de símbolos
         Map<String, Object>  tablaValores = new LinkedHashMap<>();
         Map<String, String>  tablaTipos   = new LinkedHashMap<>();
         Map<String, Integer> tablaLineas  = new LinkedHashMap<>();
@@ -552,85 +552,59 @@ public class CompiladorJava extends JFrame {
         while (i < tokens.size()) {
             Symbol t = tokens.get(i);
 
-            // Saltar modificadores de acceso
-            if (t.sym == sym.PUBLIC || t.sym == sym.PRIVATE) {
-                i++;
-                continue;
-            }
+            if (t.sym == sym.PUBLIC || t.sym == sym.PRIVATE) { i++; continue; }
 
-            // Detectar inicio de declaración: INT, BOOLEAN o VOID
-            boolean esTipoDecl = (t.sym == sym.INT
-                               || t.sym == sym.BOOLEAN
-                               || t.sym == sym.VOID);
-
-            if (!esTipoDecl) {
-                i++;
-                continue;
-            }
+            boolean esTipoDecl = (t.sym == sym.INT || t.sym == sym.BOOLEAN || t.sym == sym.VOID);
+            if (!esTipoDecl) { i++; continue; }
 
             String tipoDecl = nombreTipo(t.sym);
-            int lineaDecl   = t.left;   // JFlex ya reporta 1-based (yyline + 1)
+            int lineaDecl   = t.left;
             i++;
 
-            // Siguiente debe ser un ID
-            if (i >= tokens.size() || tokens.get(i).sym != sym.ID) {
-                i++;
-                continue;
-            }
+            if (i >= tokens.size() || tokens.get(i).sym != sym.ID) { i++; continue; }
             String nombreVar = tokenValor(tokens.get(i));
             i++;
 
-            // Verificar si hay ASIGNACION o PUNTO_COMA
             if (i >= tokens.size()) break;
 
             Object valor = null;
 
             if (tokens.get(i).sym == sym.ASIGNACION) {
-                i++; // consumir =
-
-                // Recolectar tokens de la expresión hasta PUNTO_COMA o fin
+                i++;
                 List<Symbol> exprToks = new ArrayList<>();
                 while (i < tokens.size() && tokens.get(i).sym != sym.PUNTO_COMA) {
                     exprToks.add(tokens.get(i));
                     i++;
                 }
-                if (i < tokens.size()) i++; // consumir ;
-
+                if (i < tokens.size()) i++;
                 valor = evaluarExpresion(exprToks, tablaValores);
-
             } else if (tokens.get(i).sym == sym.PUNTO_COMA) {
-                i++; // declaración sin valor inicial
+                i++;
                 valor = valorDefault(tipoDecl);
             } else if (tokens.get(i).sym == sym.COMA || tokens.get(i).sym == sym.PARENTESIS_C) {
-                i++; 
-                valor = "Parámetro"; 
+                i++;
+                valor = "Parámetro";
             } else {
-                // Estructura desconocida: avanzar
                 i++;
                 continue;
             }
 
-            // Guardar en tablas locales
             tablaValores.put(nombreVar, valor);
             tablaTipos  .put(nombreVar, tipoDecl);
             tablaLineas .put(nombreVar, lineaDecl);
 
-            // ── Escribir línea de traza ───────────────────────
             String prefijo = String.format("  L%-3d  ", lineaDecl);
             appendTexto(salidaResultado, prefijo, TEXT_MUTED, false);
             appendTexto(salidaResultado, tipoDecl + " ", COLOR_KW, true);
             appendTexto(salidaResultado, nombreVar, COLOR_INFO, true);
             appendTexto(salidaResultado, "  =  ", TEXT_LIGHT, false);
-            appendTexto(salidaResultado,
-                    formatearValor(valor, tipoDecl) + "\n",
-                    COLOR_VAL, false);
+            appendTexto(salidaResultado, formatearValor(valor, tipoDecl) + "\n", COLOR_VAL, false);
         }
 
         appendTexto(salidaResultado,
                 "\n── Fin de traza ─────────────────────────────────────\n",
                 TEXT_MUTED, true);
 
-        // ── Poblar tabla de símbolos ──────────────────────────
         modeloSimbolos.setRowCount(0);
         for (Map.Entry<String, Object> entry : tablaValores.entrySet()) {
             String nom  = entry.getKey();
@@ -642,42 +616,29 @@ public class CompiladorJava extends JFrame {
     }
 
     // =========================================================
-    //  EVALUADOR DE EXPRESIONES ARITMÉTICAS
-    //
-    //  Soporta:  LITERAL_ENTERO | LITERAL_FLOTANTE | LITERAL_STRING
-    //            | ID (variable ya declarada)
-    //            | expr OP expr   (SUMA, RESTA, MULTIPLICACION, DIVISION)
-    //
-    //  Precedencia: primero se resuelven +/-, luego */÷
-    //  (búsqueda de derecha a izquierda para respetar asociatividad izq.)
+    //  EVALUADOR DE EXPRESIONES
     // =========================================================
     private Object evaluarExpresion(List<Symbol> toks, Map<String, Object> tabla) {
         if (toks.isEmpty()) return null;
 
-        // Nivel 1: + y -
         int idx = buscarOperador(toks, sym.SUMA, sym.RESTA);
         if (idx > 0) {
-            Object izq = evaluarExpresion(toks.subList(0, idx),          tabla);
+            Object izq = evaluarExpresion(toks.subList(0, idx), tabla);
             Object der = evaluarExpresion(toks.subList(idx + 1, toks.size()), tabla);
             return aplicarOp(toks.get(idx).sym, izq, der);
         }
-
-        // Nivel 2: * y /
         idx = buscarOperador(toks, sym.MULTIPLICACION, sym.DIVISION);
         if (idx > 0) {
-            Object izq = evaluarExpresion(toks.subList(0, idx),          tabla);
+            Object izq = evaluarExpresion(toks.subList(0, idx), tabla);
             Object der = evaluarExpresion(toks.subList(idx + 1, toks.size()), tabla);
             return aplicarOp(toks.get(idx).sym, izq, der);
         }
-
-        // Expresión atómica (token único)
         if (toks.size() == 1) {
             Symbol s = toks.get(0);
-            if (s.sym == sym.LITERAL_ENTERO)  return s.value;           // ya es Integer
-            if (s.sym == sym.LITERAL_FLOTANTE) return s.value;          // ya es Double
+            if (s.sym == sym.LITERAL_ENTERO)  return s.value;
+            if (s.sym == sym.LITERAL_FLOTANTE) return s.value;
             if (s.sym == sym.LITERAL_STRING) {
                 String raw = tokenValor(s);
-                // Quitar comillas si el valor las incluye
                 if (raw.startsWith("\"") && raw.endsWith("\"") && raw.length() >= 2)
                     return raw.substring(1, raw.length() - 1);
                 return raw;
@@ -686,11 +647,9 @@ public class CompiladorJava extends JFrame {
             if (s.sym == sym.FALSE) return Boolean.FALSE;
             if (s.sym == sym.ID)    return tabla.getOrDefault(tokenValor(s), "?");
         }
-
         return null;
     }
 
-    /** Busca el operador más a la derecha con sym == op1 ó sym == op2. */
     private int buscarOperador(List<Symbol> toks, int op1, int op2) {
         for (int i = toks.size() - 1; i >= 0; i--) {
             int s = toks.get(i).sym;
@@ -701,17 +660,12 @@ public class CompiladorJava extends JFrame {
 
     private Object aplicarOp(int op, Object a, Object b) {
         if (a == null || b == null) return "Parámetro";
-        if ("Parámetro".equals(a) || "Parámetro".equals(b)) {
-            return "null [no asignado]";
-        }
+        if ("Parámetro".equals(a) || "Parámetro".equals(b)) return "null [no asignado]";
         try {
-            if (a instanceof Boolean || b instanceof Boolean) return a; // no operable
+            if (a instanceof Boolean || b instanceof Boolean) return a;
             if (a instanceof String  || b instanceof String)
                 return String.valueOf(a) + String.valueOf(b);
-
-            double da = toDouble(a);
-            double db = toDouble(b);
-            double res;
+            double da = toDouble(a), db = toDouble(b), res;
             switch (op) {
                 case sym.SUMA:           res = da + db; break;
                 case sym.RESTA:          res = da - db; break;
@@ -720,13 +674,9 @@ public class CompiladorJava extends JFrame {
                 default: return null;
             }
             if (a instanceof Integer && b instanceof Integer
-                    && op != sym.DIVISION && res == (int) res) {
-                return (int) res;
-            }
+                    && op != sym.DIVISION && res == (int) res) return (int) res;
             return res;
-        } catch (Exception e) {
-            return null;
-        }
+        } catch (Exception e) { return null; }
     }
 
     private double toDouble(Object o) {
@@ -750,7 +700,7 @@ public class CompiladorJava extends JFrame {
     }
 
     // =========================================================
-    //  MAPEOS / UTILIDADES DE TOKENS
+    //  UTILIDADES DE TOKENS
     // =========================================================
     private String nombreTokenSym(int id) {
         if (id >= 0 && id < sym.terminalNames.length) return sym.terminalNames[id];
@@ -783,43 +733,26 @@ public class CompiladorJava extends JFrame {
         if (val instanceof Double) {
             double d = (Double) val;
             if (Double.isNaN(d)) return "NaN (división por 0)";
-            if (d == (long) d) return (long) d + ".0";
+            if (d == (long) d)   return (long) d + ".0";
         }
         return String.valueOf(val);
     }
 
     private String categoriaToken(int id) {
         switch (id) {
-            case sym.PUBLIC:
-            case sym.PRIVATE:
-            case sym.CLASS:
-            case sym.IF:
-            case sym.ELSE:
-            case sym.WHILE:
-            case sym.INT:
-            case sym.BOOLEAN:
-            case sym.VOID:
-            case sym.TRUE:
-            case sym.FALSE:
+            case sym.PUBLIC: case sym.PRIVATE: case sym.CLASS:
+            case sym.IF: case sym.ELSE: case sym.WHILE:
+            case sym.INT: case sym.BOOLEAN: case sym.VOID:
+            case sym.TRUE: case sym.FALSE: case sym.RETURN:
                 return "RESERVADA";
-            case sym.SUMA:
-            case sym.RESTA:
-            case sym.MULTIPLICACION:
-            case sym.DIVISION:
-            case sym.ASIGNACION:
-            case sym.IGUAL_QUE:
-            case sym.MENOR_QUE:
-            case sym.MAYOR_QUE:
+            case sym.SUMA: case sym.RESTA: case sym.MULTIPLICACION:
+            case sym.DIVISION: case sym.ASIGNACION: case sym.IGUAL_QUE:
+            case sym.MENOR_QUE: case sym.MAYOR_QUE:
                 return "OPERADOR";
-            case sym.LITERAL_ENTERO:
-            case sym.LITERAL_FLOTANTE:
-            case sym.LITERAL_STRING:
+            case sym.LITERAL_ENTERO: case sym.LITERAL_FLOTANTE: case sym.LITERAL_STRING:
                 return "LITERAL";
-            case sym.PUNTO_COMA:
-            case sym.LLAVE_A:
-            case sym.LLAVE_C:
-            case sym.PARENTESIS_A:
-            case sym.PARENTESIS_C:
+            case sym.PUNTO_COMA: case sym.LLAVE_A: case sym.LLAVE_C:
+            case sym.PARENTESIS_A: case sym.PARENTESIS_C:
                 return "SEPARADOR";
             case sym.ID:
                 return "IDENTIFICADOR";
@@ -891,7 +824,7 @@ public class CompiladorJava extends JFrame {
     }
 
     // =========================================================
-    //  PANEL DE REFERENCIA DE TOKENS (reemplaza al diccionario)
+    //  PANEL DE REFERENCIA
     // =========================================================
     private JPanel crearPanelReferencia() {
         JPanel panel = new JPanel(new BorderLayout());
@@ -993,7 +926,6 @@ public class CompiladorJava extends JFrame {
 
     // =========================================================
     //  CÓDIGO DE EJEMPLO
-    //  (válido para la gramática del Parser CUP)
     // =========================================================
     private void agregarCodigoEjemplo() {
         editorCodigo.setText(
