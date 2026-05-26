@@ -597,6 +597,9 @@ class CUP$Parser$actions {
     Stack<Map<String, String>> ambitos = new Stack<>();
     { ambitos.push(new HashMap<>()); }
 
+    // NUEVO: Memoria global para guardar el tipo de retorno de los métodos
+    Map<String, String> metodos = new HashMap<>();
+
     // Tipo de retorno del método que se está parseando en este momento.
     // Se actualiza cada vez que se entra al cuerpo de un método.
     String tipoRetornoActual = "VOID";
@@ -634,7 +637,8 @@ class CUP$Parser$actions {
         return "INT"; // tipo seguro para no romper el árbol de derivación
     }
 
-    // Reglas de casteo implícito (widening). Sin cambios en lógica.
+    // Reglas de casteo implícito (widening).
+    // Sin cambios en lógica.
     public boolean esCompatible(String destino, String origen) {
         destino = destino.toUpperCase();
         origen  = origen.toUpperCase();
@@ -828,7 +832,11 @@ class CUP$Parser$actions {
 		int idleft = ((java_cup.runtime.Symbol)CUP$Parser$stack.elementAt(CUP$Parser$top-1)).left;
 		int idright = ((java_cup.runtime.Symbol)CUP$Parser$stack.elementAt(CUP$Parser$top-1)).right;
 		String id = (String)((java_cup.runtime.Symbol) CUP$Parser$stack.elementAt(CUP$Parser$top-1)).value;
- entrarAmbito(); tipoRetornoActual = t; 
+ 
+        metodos.put(id, t.toUpperCase()); // Guardamos la firma
+        entrarAmbito(); 
+        tipoRetornoActual = t; 
+    
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("NT$0",31, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -854,7 +862,7 @@ class CUP$Parser$actions {
           case 13: // tipo ::= BYTE 
             {
               String RESULT =null;
-		 RESULT = "BYTE";    
+		 RESULT = "BYTE"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -863,7 +871,7 @@ class CUP$Parser$actions {
           case 14: // tipo ::= SHORT 
             {
               String RESULT =null;
-		 RESULT = "SHORT";   
+		 RESULT = "SHORT"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -872,7 +880,7 @@ class CUP$Parser$actions {
           case 15: // tipo ::= INT 
             {
               String RESULT =null;
-		 RESULT = "INT";     
+		 RESULT = "INT"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -881,7 +889,7 @@ class CUP$Parser$actions {
           case 16: // tipo ::= LONG 
             {
               String RESULT =null;
-		 RESULT = "LONG";    
+		 RESULT = "LONG"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -890,7 +898,7 @@ class CUP$Parser$actions {
           case 17: // tipo ::= FLOAT 
             {
               String RESULT =null;
-		 RESULT = "FLOAT";   
+		 RESULT = "FLOAT"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -899,7 +907,7 @@ class CUP$Parser$actions {
           case 18: // tipo ::= DOUBLE 
             {
               String RESULT =null;
-		 RESULT = "DOUBLE";  
+		 RESULT = "DOUBLE"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -917,7 +925,7 @@ class CUP$Parser$actions {
           case 20: // tipo ::= CHAR 
             {
               String RESULT =null;
-		 RESULT = "CHAR";    
+		 RESULT = "CHAR"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -926,7 +934,7 @@ class CUP$Parser$actions {
           case 21: // tipo ::= STRING_TYPE 
             {
               String RESULT =null;
-		 RESULT = "STRING";  
+		 RESULT = "STRING"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -935,7 +943,7 @@ class CUP$Parser$actions {
           case 22: // tipo ::= VOID 
             {
               String RESULT =null;
-		 RESULT = "VOID";    
+		 RESULT = "VOID"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("tipo",8, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -1525,7 +1533,7 @@ class CUP$Parser$actions {
 		int vleft = ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()).left;
 		int vright = ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()).right;
 		Integer v = (Integer)((java_cup.runtime.Symbol) CUP$Parser$stack.peek()).value;
-		 RESULT = "INT";     
+		 RESULT = "INT"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("expresion",24, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -1549,7 +1557,7 @@ class CUP$Parser$actions {
 		int vleft = ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()).left;
 		int vright = ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()).right;
 		String v = (String)((java_cup.runtime.Symbol) CUP$Parser$stack.peek()).value;
-		 RESULT = "STRING";  
+		 RESULT = "STRING"; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("expresion",24, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -1600,7 +1608,10 @@ class CUP$Parser$actions {
           case 76: // expresion ::= llamada_metodo 
             {
               String RESULT =null;
-		 RESULT = "VOID"; 
+		int tipoleft = ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()).left;
+		int tiporight = ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()).right;
+		String tipo = (String)((java_cup.runtime.Symbol) CUP$Parser$stack.peek()).value;
+		 RESULT = tipo; 
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("expresion",24, ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;
@@ -1865,8 +1876,19 @@ class CUP$Parser$actions {
           /*. . . . . . . . . . . . . . . . . . . .*/
           case 95: // llamada_metodo ::= ID PARENTESIS_A lista_argumentos_opt PARENTESIS_C 
             {
-              Object RESULT =null;
-
+              String RESULT =null;
+		int idleft = ((java_cup.runtime.Symbol)CUP$Parser$stack.elementAt(CUP$Parser$top-3)).left;
+		int idright = ((java_cup.runtime.Symbol)CUP$Parser$stack.elementAt(CUP$Parser$top-3)).right;
+		String id = (String)((java_cup.runtime.Symbol) CUP$Parser$stack.elementAt(CUP$Parser$top-3)).value;
+		 
+      if (!metodos.containsKey(id)) {
+          parser.errores.add("Error Semántico [Línea " + idleft
+                  + "]: El método '" + id + "' no ha sido declarado.");
+          RESULT = "INT"; // Recuperación segura para continuar
+      } else {
+          RESULT = metodos.get(id); 
+      }
+  
               CUP$Parser$result = parser.getSymbolFactory().newSymbol("llamada_metodo",28, ((java_cup.runtime.Symbol)CUP$Parser$stack.elementAt(CUP$Parser$top-3)), ((java_cup.runtime.Symbol)CUP$Parser$stack.peek()), RESULT);
             }
           return CUP$Parser$result;

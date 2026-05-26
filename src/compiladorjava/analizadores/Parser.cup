@@ -63,6 +63,9 @@ action code {:
     Stack<Map<String, String>> ambitos = new Stack<>();
     { ambitos.push(new HashMap<>()); }
 
+    // NUEVO: Memoria global para guardar el tipo de retorno de los métodos
+    Map<String, String> metodos = new HashMap<>();
+
     // Tipo de retorno del método que se está parseando en este momento.
     // Se actualiza cada vez que se entra al cuerpo de un método.
     String tipoRetornoActual = "VOID";
@@ -100,7 +103,8 @@ action code {:
         return "INT"; // tipo seguro para no romper el árbol de derivación
     }
 
-    // Reglas de casteo implícito (widening). Sin cambios en lógica.
+    // Reglas de casteo implícito (widening).
+    // Sin cambios en lógica.
     public boolean esCompatible(String destino, String origen) {
         destino = destino.toUpperCase();
         origen  = origen.toUpperCase();
@@ -174,7 +178,8 @@ non terminal asignacion_stmt, if_stmt, while_stmt, do_while_stmt, for_stmt, for_
 non terminal for_init, for_update;
 non terminal String expresion;
 non terminal lista_parametros_opt, lista_parametros, parametro;
-non terminal llamada_metodo, lista_argumentos_opt, lista_argumentos;
+non terminal String llamada_metodo;
+non terminal lista_argumentos_opt, lista_argumentos;
 
 /* --------------------------
    Sección 4: Precedencia
@@ -210,28 +215,35 @@ miembro ::=
                     + e + " a variable de tipo " + t + ".");
         declarar(id, t, idleft);
     :}
-  | modificador_opt tipo:t ID:id PUNTO_COMA
+  |
+    modificador_opt tipo:t ID:id PUNTO_COMA
     {: declarar(id, t, idleft); :}
-  | modificador_opt tipo:t ID:id PARENTESIS_A
+  |
+    modificador_opt tipo:t ID:id PARENTESIS_A
     /* Acción de medio de regla (mid-rule action):
        Se ejecuta ANTES de parsear el cuerpo del método.
-       Aquí abrimos el ámbito Y guardamos el tipo de retorno
-       declarado, para que return_stmt pueda verificarlo. */
-    {: entrarAmbito(); tipoRetornoActual = t; :}
+       Aquí abrimos el ámbito, guardamos la firma del método en la memoria global
+       Y guardamos el tipo de retorno declarado para el return interno.
+    */
+    {: 
+        metodos.put(id, t.toUpperCase()); // Guardamos la firma
+        entrarAmbito(); 
+        tipoRetornoActual = t; 
+    :}
     lista_parametros_opt PARENTESIS_C bloque_interno marcador_salir
     {: /* fin del método */ :}
   ;
 
-tipo ::= BYTE        {: RESULT = "BYTE";    :}
-       | SHORT       {: RESULT = "SHORT";   :}
-       | INT         {: RESULT = "INT";     :}
-       | LONG        {: RESULT = "LONG";    :}
-       | FLOAT       {: RESULT = "FLOAT";   :}
-       | DOUBLE      {: RESULT = "DOUBLE";  :}
+tipo ::= BYTE        {: RESULT = "BYTE"; :}
+       | SHORT       {: RESULT = "SHORT"; :}
+       | INT         {: RESULT = "INT"; :}
+       | LONG        {: RESULT = "LONG"; :}
+       | FLOAT       {: RESULT = "FLOAT"; :}
+       | DOUBLE      {: RESULT = "DOUBLE"; :}
        | BOOLEAN     {: RESULT = "BOOLEAN"; :}
-       | CHAR        {: RESULT = "CHAR";    :}
-       | STRING_TYPE {: RESULT = "STRING";  :}
-       | VOID        {: RESULT = "VOID";    :}
+       | CHAR        {: RESULT = "CHAR"; :}
+       | STRING_TYPE {: RESULT = "STRING"; :}
+       | VOID        {: RESULT = "VOID"; :}
        ;
 
 /* Marcadores de scope */
@@ -410,18 +422,19 @@ return_stmt ::=
         }
     :}
   ;
+
 expr_stmt   ::= expresion PUNTO_COMA ;
 
 /* ── Expresiones y Tipos Resultantes ── */
 expresion ::=
-    LITERAL_ENTERO:v   {: RESULT = "INT";     :}
+    LITERAL_ENTERO:v   {: RESULT = "INT"; :}
   | LITERAL_FLOTANTE:v {: RESULT = "DOUBLE";  :}
-  | LITERAL_STRING:v   {: RESULT = "STRING";  :}
+  | LITERAL_STRING:v   {: RESULT = "STRING"; :}
   | LITERAL_CHAR:v     {: RESULT = "CHAR";    :}
   | TRUE               {: RESULT = "BOOLEAN"; :}
   | FALSE              {: RESULT = "BOOLEAN"; :}
   | ID:id              {: RESULT = obtenerTipo(id, idleft); :}
-  | llamada_metodo     {: RESULT = "VOID"; :}
+  | llamada_metodo:tipo {: RESULT = tipo; :}
 
   // Aritmética
   | expresion:e1 SUMA expresion:e2
@@ -472,4 +485,15 @@ expresion ::=
 /* Llamada a Método */
 lista_argumentos_opt ::= lista_argumentos | /* vacio */ ;
 lista_argumentos     ::= lista_argumentos COMA expresion | expresion ;
-llamada_metodo       ::= ID PARENTESIS_A lista_argumentos_opt PARENTESIS_C ;
+
+llamada_metodo ::= ID:id PARENTESIS_A lista_argumentos_opt PARENTESIS_C 
+  {: 
+      if (!metodos.containsKey(id)) {
+          parser.errores.add("Error Semántico [Línea " + idleft
+                  + "]: El método '" + id + "' no ha sido declarado.");
+          RESULT = "INT"; // Recuperación segura para continuar
+      } else {
+          RESULT = metodos.get(id); 
+      }
+  :}
+;
